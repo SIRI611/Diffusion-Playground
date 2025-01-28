@@ -1,2 +1,2 @@
-# DIffusion Models Framwork
+# Diffusion Models Framwork
 
