@@ -1,0 +1,17 @@
+model:
+  num_classes: 10
+  channels: 64
+dataset:
+  batch_size: 128
+  data_dir: ./data
+train:
+  epochs: 20
+  learning_rate: 0.001
+  T: 1000
+  beta_end: 0.02
+  batch_size: 64
+  lr: 0.001
+  timesteps: 1000
+  beta_start: 0.0001
+  dataset: MNIST
+  device: cuda:0

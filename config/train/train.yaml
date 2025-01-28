@@ -1,0 +1,10 @@
+epochs: 20
+learning_rate: 1e-3
+T: 1000          # Number of timesteps in the diffusion process
+beta_end: 0.02
+batch_size: 64
+lr: 0.001
+timesteps: 1000
+beta_start: 1e-4
+dataset: "MNIST"
+device: "cuda:0"  # Change to "cpu" if no GPU

@@ -1,0 +1,12 @@
+model:
+  num_classes: 10
+  channels: 64
+dataset:
+  batch_size: 128
+  data_dir: ./data
+training:
+  epochs: 20
+  learning_rate: 0.001
+  T: 1000
+  beta_start: 0.0001
+  beta_end: 0.02
