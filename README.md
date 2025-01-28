@@ -1,2 +1,2 @@
-# DIffusion Models Structure
+# DIffusion Models Framwork
 
