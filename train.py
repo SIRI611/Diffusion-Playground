@@ -48,5 +48,6 @@ def main(cfg: DictConfig):
         
         print(f"Epoch {epoch+1}/{cfg.train.epochs}, Loss: {loss.item():.4f}")
 
+ 
 if __name__ == "__main__":
     main()

@@ -22,3 +22,4 @@ class DDPM:
 
     def reverse_diffusion(self, x, t):
         return self.model(x, t)
+    
