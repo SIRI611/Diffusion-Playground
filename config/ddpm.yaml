@@ -1,4 +1,0 @@
-defaults:
-  - model: unet
-  - dataset: mnist
-  - train: train

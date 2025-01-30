@@ -1,0 +1,4 @@
+model:
+  type: "consistency"
+  input_dim: 784
+  hidden_dim: 128

@@ -1,0 +1,4 @@
+model:
+  type: "diffusion"
+  input_dim: 1
+  hidden_dim: 64

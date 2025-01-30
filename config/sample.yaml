@@ -1,0 +1,7 @@
+sample:
+  model_type: "ddpm"  # Choose from: diffusion, score, consistency
+  model_path: "checkpoints/ddpm.pth"
+  batch_size: 16
+  timesteps: 1000
+  sigma: 0.01  # Only used for score-based models
+  device: "cuda"

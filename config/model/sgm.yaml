@@ -1,0 +1,4 @@
+model:
+  type: "score"
+  input_dim: 784
+  hidden_dim: 128

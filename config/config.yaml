@@ -1,0 +1,3 @@
+defaults:
+  - sample: sample
+  - model: score # can be changed to consistency ore score
