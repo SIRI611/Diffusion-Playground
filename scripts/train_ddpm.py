@@ -5,8 +5,8 @@ from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 from torch import optim
 
-from diffusion.utils.unet import UNet
-from diffusion.models.ddpm import DDPM
+from diffusion.models.unet import UNet
+from diffusion.policy.ddpm import DDPM
 import torch.nn.functional as F
 
 @hydra.main(config_path="config", config_name="ddpm")
