@@ -2,13 +2,13 @@ import torch
 import torch.nn.functional as F
 from torch import nn
 import numpy as np
-from typing import Optional, Tuple, Union
+from typing import Optional, Tuple, Union, List
 
-class DDPM:
+class DDIM:
     """
-    Denoising Diffusion Probabilistic Models (DDPM) implementation.
+    Denoising Diffusion Implicit Models (DDIM) implementation.
     
-    Based on: "Denoising Diffusion Probabilistic Models" by Ho et al.
+    Based on: "Denoising Diffusion Implicit Models" by Song et al.
     """
     
     def __init__(self, model, timesteps=1000, beta_start=1e-4, beta_end=0.02, 
@@ -17,7 +17,7 @@ class DDPM:
         self.timesteps = timesteps
         self.device = device
         
-        # Beta schedule
+        # Beta schedule (same as DDPM)
         if schedule == "linear":
             self.beta = torch.linspace(beta_start, beta_end, timesteps).to(device)
         elif schedule == "cosine":
@@ -27,19 +27,10 @@ class DDPM:
             
         self.alpha = 1.0 - self.beta
         self.alpha_cumprod = torch.cumprod(self.alpha, dim=0)
-        self.alpha_cumprod_prev = F.pad(self.alpha_cumprod[:-1], (1, 0), value=1.0)
         
-        # Precompute coefficients for sampling
+        # Precompute coefficients
         self.sqrt_alpha_cumprod = torch.sqrt(self.alpha_cumprod)
         self.sqrt_one_minus_alpha_cumprod = torch.sqrt(1.0 - self.alpha_cumprod)
-        self.sqrt_recip_alpha = torch.sqrt(1.0 / self.alpha)
-        self.sqrt_recip_alpha_cumprod = torch.sqrt(1.0 / self.alpha_cumprod)
-        
-        # Posterior variance
-        self.posterior_variance = self.beta * (1.0 - self.alpha_cumprod_prev) / (1.0 - self.alpha_cumprod)
-        self.posterior_log_variance_clipped = torch.log(torch.clamp(self.posterior_variance, min=1e-20))
-        self.posterior_mean_coef1 = self.beta * torch.sqrt(self.alpha_cumprod_prev) / (1.0 - self.alpha_cumprod)
-        self.posterior_mean_coef2 = (1.0 - self.alpha_cumprod_prev) * torch.sqrt(self.alpha) / (1.0 - self.alpha_cumprod)
 
     def _cosine_beta_schedule(self, timesteps, s=0.008):
         """Cosine noise schedule as proposed in Improved DDPM."""
@@ -51,7 +42,7 @@ class DDPM:
         return torch.clip(betas, 0.0001, 0.9999)
 
     def forward_diffusion(self, x0: torch.Tensor, t: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        """Apply forward diffusion process."""
+        """Apply forward diffusion process (same as DDPM)."""
         noise = torch.randn_like(x0)
         
         # Reshape for broadcasting
@@ -66,7 +57,7 @@ class DDPM:
         return self.model(x, t)
 
     def compute_loss(self, x0: torch.Tensor) -> torch.Tensor:
-        """Compute DDPM loss."""
+        """Compute DDIM loss (same as DDPM)."""
         batch_size = x0.shape[0]
         t = torch.randint(0, self.timesteps, (batch_size,), device=self.device).long()
         
@@ -75,38 +66,15 @@ class DDPM:
         
         return F.mse_loss(noise, predicted_noise)
 
-    def sample(self, shape: Tuple[int, ...], num_steps: Optional[int] = None) -> torch.Tensor:
-        """Sample from the model using DDPM sampling."""
-        if num_steps is None:
-            num_steps = self.timesteps
-            
-        # Start from pure noise
-        x = torch.randn(shape, device=self.device)
+    def sample(self, shape: Tuple[int, ...], num_steps: int = 50, eta: float = 0.0) -> torch.Tensor:
+        """
+        Sample using DDIM deterministic sampling.
         
-        # Reverse diffusion process
-        for i in reversed(range(num_steps)):
-            t = torch.full((shape[0],), i, device=self.device, dtype=torch.long)
-            
-            # Predict noise
-            predicted_noise = self.reverse_diffusion(x, t)
-            
-            # Compute coefficients
-            alpha_t = self.alpha[t].view(-1, 1, 1, 1)
-            alpha_cumprod_t = self.alpha_cumprod[t].view(-1, 1, 1, 1)
-            beta_t = self.beta[t].view(-1, 1, 1, 1)
-            
-            if i > 0:
-                # Add noise for stochastic sampling
-                noise = torch.randn_like(x)
-                x = (1 / torch.sqrt(alpha_t)) * (x - beta_t / torch.sqrt(1 - alpha_cumprod_t) * predicted_noise) + torch.sqrt(beta_t) * noise
-            else:
-                # Final step without noise
-                x = (1 / torch.sqrt(alpha_t)) * (x - beta_t / torch.sqrt(1 - alpha_cumprod_t) * predicted_noise)
-                
-        return x
-
-    def ddim_sample(self, shape: Tuple[int, ...], num_steps: int = 50, eta: float = 0.0) -> torch.Tensor:
-        """Sample using DDIM (deterministic sampling)."""
+        Args:
+            shape: Shape of the samples to generate
+            num_steps: Number of denoising steps (fewer than timesteps for speed)
+            eta: Controls stochasticity (0 = deterministic, 1 = stochastic)
+        """
         # Create DDIM timestep schedule
         step_size = self.timesteps // num_steps
         timesteps = torch.arange(0, self.timesteps, step_size, device=self.device)
@@ -144,4 +112,70 @@ class DDPM:
                 x = pred_x0
                 
         return x
-    
+
+    def encode(self, x0: torch.Tensor, num_steps: int = 50) -> torch.Tensor:
+        """
+        Encode real data to latent space using DDIM.
+        
+        Args:
+            x0: Real data samples
+            num_steps: Number of encoding steps
+        """
+        # Create DDIM timestep schedule
+        step_size = self.timesteps // num_steps
+        timesteps = torch.arange(0, self.timesteps, step_size, device=self.device)
+        
+        x = x0.clone()
+        
+        for i in range(len(timesteps)):
+            t = torch.full((x.shape[0],), timesteps[i], device=self.device, dtype=torch.long)
+            
+            # Predict noise
+            predicted_noise = self.reverse_diffusion(x, t)
+            
+            # DDIM encoding step
+            alpha_cumprod_t = self.alpha_cumprod[t].view(-1, 1, 1, 1)
+            
+            if i < len(timesteps) - 1:
+                alpha_cumprod_next = self.alpha_cumprod[timesteps[i+1]].view(-1, 1, 1, 1)
+                
+                # Predict x0
+                pred_x0 = (x - torch.sqrt(1 - alpha_cumprod_t) * predicted_noise) / torch.sqrt(alpha_cumprod_t)
+                
+                # DDIM encoding direction
+                dir_xt = torch.sqrt(1 - alpha_cumprod_next) * predicted_noise
+                
+                # Update x
+                x = torch.sqrt(alpha_cumprod_next) * pred_x0 + dir_xt
+            else:
+                # Final encoding step
+                pred_x0 = (x - torch.sqrt(1 - alpha_cumprod_t) * predicted_noise) / torch.sqrt(alpha_cumprod_t)
+                x = pred_x0
+                
+        return x
+
+    def interpolate(self, x1: torch.Tensor, x2: torch.Tensor, num_steps: int = 50, 
+                   interpolation_steps: int = 10) -> List[torch.Tensor]:
+        """
+        Interpolate between two samples in latent space.
+        
+        Args:
+            x1, x2: Two samples to interpolate between
+            num_steps: Number of DDIM steps for encoding/decoding
+            interpolation_steps: Number of interpolation points
+        """
+        # Encode both samples
+        z1 = self.encode(x1, num_steps)
+        z2 = self.encode(x2, num_steps)
+        
+        # Interpolate in latent space
+        interpolations = []
+        for i in range(interpolation_steps + 1):
+            alpha = i / interpolation_steps
+            z_interp = (1 - alpha) * z1 + alpha * z2
+            
+            # Decode back to data space
+            x_interp = self.sample(z_interp.shape, num_steps)
+            interpolations.append(x_interp)
+            
+        return interpolations

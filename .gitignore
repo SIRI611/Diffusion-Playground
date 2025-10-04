@@ -235,3 +235,4 @@ package-lock.json
 
 # Ignore virtual environments
 pip-wheel-metadata/
+*test_models.py

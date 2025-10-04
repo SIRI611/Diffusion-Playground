@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Training script for DDPM (Denoising Diffusion Probabilistic Models).
+Training script for Flow-based Models (Normalizing Flows and CNFs).
 """
 
 import torch
@@ -16,7 +16,7 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 import numpy as np
 
-from diffusion.policy.ddpm import DDPM
+from diffusion.policy.flow_models import NormalizingFlow, ContinuousNormalizingFlow, FlowBasedModel
 from diffusion.models.unet import UNet, SimpleUNet
 
 def get_data_loaders(dataset_name="mnist", batch_size=128, num_workers=4):
@@ -25,7 +25,8 @@ def get_data_loaders(dataset_name="mnist", batch_size=128, num_workers=4):
     if dataset_name == "mnist":
         transform = transforms.Compose([
             transforms.ToTensor(),
-            transforms.Normalize((0.5,), (0.5,))  # Normalize to [-1, 1]
+            transforms.Normalize((0.5,), (0.5,)),  # Normalize to [-1, 1]
+            transforms.Lambda(lambda x: x.view(-1))  # Flatten for flow models
         ])
         
         train_dataset = torchvision.datasets.MNIST(
@@ -38,7 +39,8 @@ def get_data_loaders(dataset_name="mnist", batch_size=128, num_workers=4):
     elif dataset_name == "cifar10":
         transform = transforms.Compose([
             transforms.ToTensor(),
-            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))  # Normalize to [-1, 1]
+            transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),  # Normalize to [-1, 1]
+            transforms.Lambda(lambda x: x.view(-1))  # Flatten for flow models
         ])
         
         train_dataset = torchvision.datasets.CIFAR10(
@@ -60,27 +62,27 @@ def get_data_loaders(dataset_name="mnist", batch_size=128, num_workers=4):
     
     return train_loader, test_loader
 
-def train_ddpm(model, train_loader, test_loader, num_epochs=100, lr=1e-4, 
-               device="cuda", save_dir="./checkpoints", use_wandb=False):
-    """Train DDPM model."""
+def train_flow_model(model, train_loader, test_loader, num_epochs=100, lr=1e-4, 
+                    device="cuda", save_dir="./checkpoints", use_wandb=False):
+    """Train Flow-based model."""
     
     # Create save directory
     os.makedirs(save_dir, exist_ok=True)
     
     # Initialize wandb if requested
     if use_wandb:
-        wandb.init(project="ddpm-training", config={
+        wandb.init(project="flow-model-training", config={
             "num_epochs": num_epochs,
             "learning_rate": lr,
             "device": device
         })
     
     # Optimizer
-    optimizer = optim.Adam(model.model.parameters(), lr=lr)
+    optimizer = optim.Adam(model.flow_model.parameters(), lr=lr)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
     
     # Training loop
-    model.model.train()
+    model.flow_model.train()
     for epoch in range(num_epochs):
         total_loss = 0
         num_batches = 0
@@ -118,18 +120,24 @@ def train_ddpm(model, train_loader, test_loader, num_epochs=100, lr=1e-4,
         if (epoch + 1) % 10 == 0:
             checkpoint = {
                 'epoch': epoch,
-                'model_state_dict': model.model.state_dict(),
+                'model_state_dict': model.flow_model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'loss': avg_loss,
             }
-            torch.save(checkpoint, os.path.join(save_dir, f'ddpm_epoch_{epoch+1}.pth'))
+            torch.save(checkpoint, os.path.join(save_dir, f'flow_epoch_{epoch+1}.pth'))
         
         # Generate samples
         if (epoch + 1) % 20 == 0:
-            model.model.eval()
+            model.flow_model.eval()
             with torch.no_grad():
                 # Generate samples
-                samples = model.sample((16, data.shape[1], data.shape[2], data.shape[3]))
+                samples = model.sample(16)
+                
+                # Reshape samples back to image format
+                if data.shape[1] == 784:  # MNIST
+                    samples = samples.view(16, 1, 28, 28)
+                elif data.shape[1] == 3072:  # CIFAR-10
+                    samples = samples.view(16, 3, 32, 32)
                 
                 # Save samples
                 save_samples(samples, os.path.join(save_dir, f'samples_epoch_{epoch+1}.png'))
@@ -138,10 +146,10 @@ def train_ddpm(model, train_loader, test_loader, num_epochs=100, lr=1e-4,
                 if use_wandb:
                     wandb.log({"samples": wandb.Image(samples[0])})
             
-            model.model.train()
+            model.flow_model.train()
     
     # Save final model
-    torch.save(model.model.state_dict(), os.path.join(save_dir, 'ddpm_final.pth'))
+    torch.save(model.flow_model.state_dict(), os.path.join(save_dir, 'flow_final.pth'))
     
     if use_wandb:
         wandb.finish()
@@ -167,7 +175,7 @@ def save_samples(samples, filename):
     plt.close()
 
 def main():
-    parser = argparse.ArgumentParser(description='Train DDPM')
+    parser = argparse.ArgumentParser(description='Train Flow-based Model')
     parser.add_argument('--dataset', type=str, default='mnist', 
                        choices=['mnist', 'cifar10'], help='Dataset to use')
     parser.add_argument('--batch_size', type=int, default=128, help='Batch size')
@@ -176,10 +184,10 @@ def main():
     parser.add_argument('--device', type=str, default='cuda', help='Device to use')
     parser.add_argument('--save_dir', type=str, default='./checkpoints', help='Save directory')
     parser.add_argument('--use_wandb', action='store_true', help='Use wandb logging')
-    parser.add_argument('--timesteps', type=int, default=1000, help='Number of timesteps')
-    parser.add_argument('--schedule', type=str, default='linear', 
-                       choices=['linear', 'cosine'], help='Noise schedule')
-    parser.add_argument('--model_channels', type=int, default=128, help='Model channels')
+    parser.add_argument('--flow_type', type=str, default='normalizing', 
+                       choices=['normalizing', 'continuous'], help='Type of flow model')
+    parser.add_argument('--hidden_dim', type=int, default=64, help='Hidden dimension')
+    parser.add_argument('--num_layers', type=int, default=8, help='Number of flow layers')
     
     args = parser.parse_args()
     
@@ -195,25 +203,29 @@ def main():
     data_shape = sample_batch[0].shape[1:]  # Remove batch dimension
     print(f"Data shape: {data_shape}")
     
-    # Create model
-    if args.dataset == 'mnist':
-        model = SimpleUNet(in_channels=1, out_channels=1, hidden_channels=args.model_channels)
-    else:  # cifar10
-        model = UNet(in_channels=3, out_channels=3, model_channels=args.model_channels)
+    # Create flow model
+    if args.flow_type == 'normalizing':
+        flow_model = NormalizingFlow(
+            input_dim=data_shape[0],
+            hidden_dim=args.hidden_dim,
+            num_layers=args.num_layers,
+            device=device
+        )
+    else:  # continuous
+        flow_model = ContinuousNormalizingFlow(
+            input_dim=data_shape[0],
+            hidden_dim=args.hidden_dim,
+            device=device
+        )
     
-    # Create DDPM
-    ddpm = DDPM(
-        model=model,
-        timesteps=args.timesteps,
-        schedule=args.schedule,
-        device=device
-    )
+    # Create wrapper
+    model = FlowBasedModel(flow_model, device=device)
     
-    print(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
+    print(f"Model parameters: {sum(p.numel() for p in flow_model.parameters()):,}")
     
     # Train
-    train_ddpm(
-        ddpm, train_loader, test_loader,
+    train_flow_model(
+        model, train_loader, test_loader,
         num_epochs=args.num_epochs,
         lr=args.lr,
         device=device,

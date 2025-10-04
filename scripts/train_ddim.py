@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Training script for DDPM (Denoising Diffusion Probabilistic Models).
+Training script for DDIM (Denoising Diffusion Implicit Models).
 """
 
 import torch
@@ -16,7 +16,7 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 import numpy as np
 
-from diffusion.policy.ddpm import DDPM
+from diffusion.policy.ddim import DDIM
 from diffusion.models.unet import UNet, SimpleUNet
 
 def get_data_loaders(dataset_name="mnist", batch_size=128, num_workers=4):
@@ -60,16 +60,16 @@ def get_data_loaders(dataset_name="mnist", batch_size=128, num_workers=4):
     
     return train_loader, test_loader
 
-def train_ddpm(model, train_loader, test_loader, num_epochs=100, lr=1e-4, 
+def train_ddim(model, train_loader, test_loader, num_epochs=100, lr=1e-4, 
                device="cuda", save_dir="./checkpoints", use_wandb=False):
-    """Train DDPM model."""
+    """Train DDIM model."""
     
     # Create save directory
     os.makedirs(save_dir, exist_ok=True)
     
     # Initialize wandb if requested
     if use_wandb:
-        wandb.init(project="ddpm-training", config={
+        wandb.init(project="ddim-training", config={
             "num_epochs": num_epochs,
             "learning_rate": lr,
             "device": device
@@ -122,14 +122,15 @@ def train_ddpm(model, train_loader, test_loader, num_epochs=100, lr=1e-4,
                 'optimizer_state_dict': optimizer.state_dict(),
                 'loss': avg_loss,
             }
-            torch.save(checkpoint, os.path.join(save_dir, f'ddpm_epoch_{epoch+1}.pth'))
+            torch.save(checkpoint, os.path.join(save_dir, f'ddim_epoch_{epoch+1}.pth'))
         
         # Generate samples
         if (epoch + 1) % 20 == 0:
             model.model.eval()
             with torch.no_grad():
-                # Generate samples
-                samples = model.sample((16, data.shape[1], data.shape[2], data.shape[3]))
+                # Generate samples using DDIM sampling
+                samples = model.sample((16, data.shape[1], data.shape[2], data.shape[3]), 
+                                     num_steps=50, eta=0.0)
                 
                 # Save samples
                 save_samples(samples, os.path.join(save_dir, f'samples_epoch_{epoch+1}.png'))
@@ -141,7 +142,7 @@ def train_ddpm(model, train_loader, test_loader, num_epochs=100, lr=1e-4,
             model.model.train()
     
     # Save final model
-    torch.save(model.model.state_dict(), os.path.join(save_dir, 'ddpm_final.pth'))
+    torch.save(model.model.state_dict(), os.path.join(save_dir, 'ddim_final.pth'))
     
     if use_wandb:
         wandb.finish()
@@ -167,7 +168,7 @@ def save_samples(samples, filename):
     plt.close()
 
 def main():
-    parser = argparse.ArgumentParser(description='Train DDPM')
+    parser = argparse.ArgumentParser(description='Train DDIM')
     parser.add_argument('--dataset', type=str, default='mnist', 
                        choices=['mnist', 'cifar10'], help='Dataset to use')
     parser.add_argument('--batch_size', type=int, default=128, help='Batch size')
@@ -201,8 +202,8 @@ def main():
     else:  # cifar10
         model = UNet(in_channels=3, out_channels=3, model_channels=args.model_channels)
     
-    # Create DDPM
-    ddpm = DDPM(
+    # Create DDIM
+    ddim = DDIM(
         model=model,
         timesteps=args.timesteps,
         schedule=args.schedule,
@@ -212,8 +213,8 @@ def main():
     print(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
     
     # Train
-    train_ddpm(
-        ddpm, train_loader, test_loader,
+    train_ddim(
+        ddim, train_loader, test_loader,
         num_epochs=args.num_epochs,
         lr=args.lr,
         device=device,

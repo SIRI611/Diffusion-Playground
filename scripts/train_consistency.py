@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Training script for DDPM (Denoising Diffusion Probabilistic Models).
+Training script for Consistency Models.
 """
 
 import torch
@@ -16,7 +16,7 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 import numpy as np
 
-from diffusion.policy.ddpm import DDPM
+from diffusion.policy.consistency_model import ConsistencyModel
 from diffusion.models.unet import UNet, SimpleUNet
 
 def get_data_loaders(dataset_name="mnist", batch_size=128, num_workers=4):
@@ -60,16 +60,16 @@ def get_data_loaders(dataset_name="mnist", batch_size=128, num_workers=4):
     
     return train_loader, test_loader
 
-def train_ddpm(model, train_loader, test_loader, num_epochs=100, lr=1e-4, 
-               device="cuda", save_dir="./checkpoints", use_wandb=False):
-    """Train DDPM model."""
+def train_consistency_model(model, train_loader, test_loader, num_epochs=100, lr=1e-4, 
+                           device="cuda", save_dir="./checkpoints", use_wandb=False):
+    """Train Consistency Model."""
     
     # Create save directory
     os.makedirs(save_dir, exist_ok=True)
     
     # Initialize wandb if requested
     if use_wandb:
-        wandb.init(project="ddpm-training", config={
+        wandb.init(project="consistency-model-training", config={
             "num_epochs": num_epochs,
             "learning_rate": lr,
             "device": device
@@ -122,14 +122,15 @@ def train_ddpm(model, train_loader, test_loader, num_epochs=100, lr=1e-4,
                 'optimizer_state_dict': optimizer.state_dict(),
                 'loss': avg_loss,
             }
-            torch.save(checkpoint, os.path.join(save_dir, f'ddpm_epoch_{epoch+1}.pth'))
+            torch.save(checkpoint, os.path.join(save_dir, f'consistency_epoch_{epoch+1}.pth'))
         
         # Generate samples
         if (epoch + 1) % 20 == 0:
             model.model.eval()
             with torch.no_grad():
-                # Generate samples
-                samples = model.sample((16, data.shape[1], data.shape[2], data.shape[3]))
+                # Generate samples using consistency sampling
+                samples = model.sample((16, data.shape[1], data.shape[2], data.shape[3]), 
+                                     num_steps=2)
                 
                 # Save samples
                 save_samples(samples, os.path.join(save_dir, f'samples_epoch_{epoch+1}.png'))
@@ -141,7 +142,7 @@ def train_ddpm(model, train_loader, test_loader, num_epochs=100, lr=1e-4,
             model.model.train()
     
     # Save final model
-    torch.save(model.model.state_dict(), os.path.join(save_dir, 'ddpm_final.pth'))
+    torch.save(model.model.state_dict(), os.path.join(save_dir, 'consistency_final.pth'))
     
     if use_wandb:
         wandb.finish()
@@ -167,7 +168,7 @@ def save_samples(samples, filename):
     plt.close()
 
 def main():
-    parser = argparse.ArgumentParser(description='Train DDPM')
+    parser = argparse.ArgumentParser(description='Train Consistency Model')
     parser.add_argument('--dataset', type=str, default='mnist', 
                        choices=['mnist', 'cifar10'], help='Dataset to use')
     parser.add_argument('--batch_size', type=int, default=128, help='Batch size')
@@ -176,9 +177,8 @@ def main():
     parser.add_argument('--device', type=str, default='cuda', help='Device to use')
     parser.add_argument('--save_dir', type=str, default='./checkpoints', help='Save directory')
     parser.add_argument('--use_wandb', action='store_true', help='Use wandb logging')
-    parser.add_argument('--timesteps', type=int, default=1000, help='Number of timesteps')
-    parser.add_argument('--schedule', type=str, default='linear', 
-                       choices=['linear', 'cosine'], help='Noise schedule')
+    parser.add_argument('--sigma_min', type=float, default=0.002, help='Minimum noise level')
+    parser.add_argument('--sigma_max', type=float, default=80.0, help='Maximum noise level')
     parser.add_argument('--model_channels', type=int, default=128, help='Model channels')
     
     args = parser.parse_args()
@@ -201,19 +201,19 @@ def main():
     else:  # cifar10
         model = UNet(in_channels=3, out_channels=3, model_channels=args.model_channels)
     
-    # Create DDPM
-    ddpm = DDPM(
+    # Create Consistency Model
+    consistency_model = ConsistencyModel(
         model=model,
-        timesteps=args.timesteps,
-        schedule=args.schedule,
+        sigma_min=args.sigma_min,
+        sigma_max=args.sigma_max,
         device=device
     )
     
     print(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
     
     # Train
-    train_ddpm(
-        ddpm, train_loader, test_loader,
+    train_consistency_model(
+        consistency_model, train_loader, test_loader,
         num_epochs=args.num_epochs,
         lr=args.lr,
         device=device,
