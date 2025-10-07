@@ -16,7 +16,7 @@ A comprehensive framework for implementing and experimenting with various diffus
 
 1. Clone the repository:
 ```bash
-git clone <repository-url>
+git clone https://github.com/SIRI611/Diffusion-Playground.git
 cd Diffusion-Playground
 ```
 
